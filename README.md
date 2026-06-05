@@ -138,9 +138,13 @@ Closes the connection and stops reconnection.
 
 Sends data through the WebSocket. Objects are JSON-serialized. Returns `true` if sent.
 
-**`updateParams(params: Record<string, string | number | boolean>): void`**
+**`updateParams(params, options?: { immediate?: boolean }): void`**
 
-Merges new query parameters and reconnects.
+Merges new query parameters. By default (`immediate: true`) the connection reconnects so the new URL takes effect now. Pass `{ immediate: false }` to defer the change to the next reconnection without tearing down a healthy socket — useful for updating a resume cursor inside a `"close"` handler.
+
+**`setParams(params): void`** — _deprecated_
+
+Alias for `updateParams(params, { immediate: false })`.
 
 **`getConnectionInfo(): ConnectionInfo`**
 
@@ -155,6 +159,7 @@ Returns a snapshot of the current connection state.
 | `"error"` | `Error \| HandlerError` | Connection error or handler error. |
 | `"reconnecting"` | `{ attempt, maxAttempts, delay, service }` | About to reconnect. |
 | `"serviceSwitched"` | `{ from, to, cycle }` | Failed over to a different service URL. |
+| `"exhausted"` | `{ services, attempts, cycles }` | Gave up reconnecting after all attempts and service cycles. |
 
 ### `HandlerContext<T>`
 

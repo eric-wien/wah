@@ -222,4 +222,71 @@ describe("WebSocketClient", () => {
       );
     });
   });
+
+  it("reconnects exactly maxAttempts times, then emits exhausted", () => {
+    vi.useFakeTimers();
+    const client = createClient({
+      reconnect: { maxAttempts: 3, initialDelay: 10, backoffFactor: 1, maxServiceCycles: 2 },
+    });
+    const onReconnecting = vi.fn();
+    const onExhausted = vi.fn();
+    client.on("reconnecting", onReconnecting);
+    client.on("exhausted", onExhausted);
+
+    client.connect();
+    let ws = lastWs();
+    ws.readyState = WS_READY_STATE.OPEN;
+    ws.onopen!({});
+
+    const drop = () => {
+      ws.readyState = WS_READY_STATE.CLOSED;
+      ws.onclose!({ code: 1006, reason: "" });
+    };
+
+    drop(); // schedules reconnect attempt 1
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(10); // fire the reconnect timer → new socket
+      ws = lastWs();
+      drop(); // and fail that attempt
+    }
+
+    // maxAttempts: 3 must yield 3 real reconnect attempts (not 2 — regression guard)
+    expect(onReconnecting).toHaveBeenCalledTimes(3);
+    expect(onExhausted).toHaveBeenCalledTimes(1);
+    expect(onExhausted).toHaveBeenCalledWith(expect.objectContaining({ attempts: 3 }));
+
+    vi.useRealTimers();
+  });
+
+  it("updateParams({ immediate: false }) defers without reconnecting", () => {
+    const client = createClient();
+    client.connect();
+    const ws = lastWs();
+    ws.readyState = WS_READY_STATE.OPEN;
+    ws.onopen!({});
+    const countBefore = mockWsInstances.length;
+
+    client.updateParams({ cursor: "123" }, { immediate: false });
+
+    expect(mockWsInstances.length).toBe(countBefore); // no new socket
+    expect(ws.close).not.toHaveBeenCalled();
+    expect(client.getConnectionInfo().currentService).toContain("cursor=123");
+
+    client.updateParams({ cursor: "456" }); // default immediate: true reconnects
+    expect(mockWsInstances.length).toBe(countBefore + 1);
+  });
+
+  it("setParams is an alias for updateParams({ immediate: false })", () => {
+    const client = createClient();
+    client.connect();
+    const ws = lastWs();
+    ws.readyState = WS_READY_STATE.OPEN;
+    ws.onopen!({});
+    const countBefore = mockWsInstances.length;
+
+    client.setParams({ cursor: "abc" });
+
+    expect(mockWsInstances.length).toBe(countBefore); // no reconnect
+    expect(client.getConnectionInfo().currentService).toContain("cursor=abc");
+  });
 });

@@ -114,36 +114,40 @@ export class WebSocketClient extends Emitter {
   }
 
   /**
-   * Merges new query parameters into the connection URL and reconnects.
+   * Merges new query parameters into the connection URL.
    * Existing parameters not present in the update are preserved.
    *
+   * By default the connection reconnects immediately so the new URL takes
+   * effect. Pass `{ immediate: false }` to defer the change to the next
+   * reconnection instead of tearing down a healthy socket.
+   *
    * @param params - Key-value pairs to merge into the current query parameters.
+   * @param options - `immediate` (default `true`): reconnect now vs. on next reconnect.
    *
    * @example
    * ```typescript
    * // Initial connection to wss://example.com?channel=lobby
    * client.updateParams({ channel: "game-1" });
    * // Reconnects to wss://example.com?channel=game-1
+   *
+   * // Update cursor on disconnect so reconnection resumes from last position
+   * client.on("close", () => {
+   *   client.updateParams({ cursor: lastEventId }, { immediate: false });
+   * });
    * ```
    */
-  updateParams(params: Record<string, string | number | boolean>): void {
-    this.connection.updateParams(params);
+  updateParams(
+    params: Record<string, string | number | boolean>,
+    options: { immediate?: boolean } = {}
+  ): void {
+    this.connection.updateParams(params, options);
   }
 
   /**
    * Merges new query parameters without triggering a reconnection.
-   * The updated params take effect on the next connection attempt
-   * (e.g., when the built-in reconnection fires after a disconnect).
    *
+   * @deprecated Use `updateParams(params, { immediate: false })`. Kept as an alias.
    * @param params - Key-value pairs to merge into the current query parameters.
-   *
-   * @example
-   * ```typescript
-   * // Update cursor on disconnect so reconnection resumes from last position
-   * client.on("close", () => {
-   *   client.setParams({ cursor: lastEventId });
-   * });
-   * ```
    */
   setParams(params: Record<string, string | number | boolean>): void {
     this.connection.setParams(params);
@@ -164,6 +168,7 @@ export class WebSocketClient extends Emitter {
     );
     this.connection.on("reconnecting", (info: unknown) => this.emit("reconnecting", info));
     this.connection.on("serviceSwitched", (info: unknown) => this.emit("serviceSwitched", info));
+    this.connection.on("exhausted", (info: unknown) => this.emit("exhausted", info));
 
     // Connection errors → unified "error" event
     this.connection.on("error", (error: Error) => this.emit("error", error));

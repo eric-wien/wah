@@ -3,6 +3,12 @@ import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Jetstream message schemas
+//
+// Each event is keyed on a `kind` literal ("commit" | "identity" | "account").
+// Instead of registering three separate schemas — which makes the router run a
+// full Zod validation per schema per message (O(handlers) on a firehose) — we
+// combine them into a single `z.discriminatedUnion`. Zod dispatches on `kind`
+// in O(1), and the whole stream is handled by one `handle()` registration.
 // ---------------------------------------------------------------------------
 
 const commitCreateSchema = z.object({
@@ -54,6 +60,13 @@ const accountSchema = z.object({
   }),
 });
 
+// One union, dispatched on `kind` — the fast path for high-throughput streams.
+const eventSchema = z.discriminatedUnion("kind", [
+  commitCreateSchema,
+  identitySchema,
+  accountSchema,
+]);
+
 // ---------------------------------------------------------------------------
 // Counters for summary
 // ---------------------------------------------------------------------------
@@ -87,26 +100,31 @@ const client = new WebSocketClient({
 });
 
 // ---------------------------------------------------------------------------
-// Register handlers
+// Register a single handler for the whole stream — `data.kind` narrows the type
 // ---------------------------------------------------------------------------
 
-client.handle(commitCreateSchema, ({ data }) => {
-  postCount++;
-  const text = data.commit.record.text.slice(0, 80).replace(/\n/g, " ");
-  const langs = data.commit.record.langs?.join(",") ?? "?";
-  const isReply = data.commit.record.reply ? " [reply]" : "";
-  console.log(`[POST #${postCount}] (${langs})${isReply} ${text}`);
-});
-
-client.handle(identitySchema, ({ data }) => {
-  identityCount++;
-  console.log(`[IDENTITY] ${data.identity.handle} (${data.identity.did})`);
-});
-
-client.handle(accountSchema, ({ data }) => {
-  accountCount++;
-  const status = data.account.active ? "active" : "inactive";
-  console.log(`[ACCOUNT] ${data.account.did} → ${status}`);
+client.handle(eventSchema, ({ data }) => {
+  switch (data.kind) {
+    case "commit": {
+      postCount++;
+      const text = data.commit.record.text.slice(0, 80).replace(/\n/g, " ");
+      const langs = data.commit.record.langs?.join(",") ?? "?";
+      const isReply = data.commit.record.reply ? " [reply]" : "";
+      console.log(`[POST #${postCount}] (${langs})${isReply} ${text}`);
+      break;
+    }
+    case "identity": {
+      identityCount++;
+      console.log(`[IDENTITY] ${data.identity.handle} (${data.identity.did})`);
+      break;
+    }
+    case "account": {
+      accountCount++;
+      const status = data.account.active ? "active" : "inactive";
+      console.log(`[ACCOUNT] ${data.account.did} → ${status}`);
+      break;
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -131,6 +149,10 @@ client.on("reconnecting", (info) => {
 
 client.on("serviceSwitched", (info) => {
   console.log("[SERVICE SWITCHED]", info);
+});
+
+client.on("exhausted", (info) => {
+  console.error("[EXHAUSTED] gave up reconnecting", info);
 });
 
 // ---------------------------------------------------------------------------

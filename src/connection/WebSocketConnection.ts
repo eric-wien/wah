@@ -16,6 +16,7 @@ import { Logger } from "../logger/Logger";
  * - `"message"` — message received (emits the raw message data)
  * - `"reconnecting"` — about to attempt reconnection (emits `{ attempt, maxAttempts, delay, service }`)
  * - `"serviceSwitched"` — failed over to a different service URL (emits `{ from, to, cycle }`)
+ * - `"exhausted"` — gave up reconnecting after all attempts/cycles (emits `{ services, attempts, cycles }`)
  */
 export class WebSocketConnection extends Emitter {
   private services: string[];
@@ -104,11 +105,27 @@ export class WebSocketConnection extends Emitter {
   }
 
   /**
-   * Merges new query parameters into the current set and reconnects
-   * so the updated URL takes effect.
+   * Merges new query parameters into the current set.
+   *
+   * When `immediate` is `true` (the default), the current connection is closed
+   * and reopened so the updated URL takes effect now. When `false`, the params
+   * are stored and take effect on the next connection attempt (e.g. after a
+   * disconnect triggers the built-in reconnection) without tearing down a
+   * healthy socket.
    */
-  updateParams(params: Record<string, string | number | boolean>): void {
+  updateParams(
+    params: Record<string, string | number | boolean>,
+    options: { immediate?: boolean } = {}
+  ): void {
     this.queryParams = { ...this.queryParams, ...params };
+
+    if (options.immediate === false) {
+      this.logger.debug("Query params set (deferred to next reconnect)", {
+        params: this.queryParams,
+      });
+      return;
+    }
+
     this.logger.info("Query params updated, reconnecting", { params: this.queryParams });
 
     // Graceful reconnect: close current, then re-run
@@ -120,12 +137,11 @@ export class WebSocketConnection extends Emitter {
 
   /**
    * Merges new query parameters without triggering a reconnection.
-   * The updated params will take effect on the next connection attempt
-   * (e.g., after a disconnect triggers the built-in reconnection).
+   *
+   * @deprecated Use `updateParams(params, { immediate: false })`. Kept as an alias.
    */
   setParams(params: Record<string, string | number | boolean>): void {
-    this.queryParams = { ...this.queryParams, ...params };
-    this.logger.debug("Query params set (no reconnect)", { params: this.queryParams });
+    this.updateParams(params, { immediate: false });
   }
 
   /**
@@ -245,8 +261,7 @@ export class WebSocketConnection extends Emitter {
   }
 
   private scheduleReconnect(): void {
-    this.reconnectAttempts++;
-
+    // Have we already used all attempts for the current service?
     if (this.reconnectAttempts >= this.reconnectConfig.maxAttempts) {
       if (this.canTryNextService()) {
         this.moveToNextService();
@@ -257,8 +272,15 @@ export class WebSocketConnection extends Emitter {
         maxCycles: this.reconnectConfig.maxServiceCycles,
         completedCycles: this.serviceCycles,
       });
+      this.emit("exhausted", {
+        services: [...this.services],
+        attempts: this.reconnectAttempts,
+        cycles: this.serviceCycles,
+      });
       return;
     }
+
+    this.reconnectAttempts++;
 
     const delay = Math.min(
       this.reconnectConfig.initialDelay *
