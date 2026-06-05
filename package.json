@@ -1,6 +1,6 @@
 {
   "name": "@vinerima/wah",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Generic WebSocket action handler with Zod-based schema validation and typed message dispatch",
   "author": "vinerima",
   "license": "MIT",
