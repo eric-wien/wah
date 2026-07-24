@@ -9,7 +9,9 @@ const decoder = new TextDecoder();
 export function createBrowserAdapter(): PlatformAdapter {
   return {
     createWebSocket(url: string): UniversalWebSocket {
-      return new WebSocket(url);
+      // WebSocketClient normalizes typed arrays to ArrayBuffer before sending.
+      // Keep the wider shared interface for Node adapters and API compatibility.
+      return new WebSocket(url) as unknown as UniversalWebSocket;
     },
 
     dataToString(data: unknown): string | null {

@@ -220,28 +220,29 @@ export class WebSocketConnection extends Emitter {
         this.messageCount++;
         this.lastMessageTime = Date.now();
         // Node ws passes the data directly; browser wraps in MessageEvent
-        const data = event && typeof event === "object" && "data" in event
-          ? (event as { data: unknown }).data
-          : event;
+        const data =
+          event && typeof event === "object" && "data" in event
+            ? (event as { data: unknown }).data
+            : event;
         this.emit("message", data);
       };
 
       ws.onerror = (event: unknown) => {
-        const error = event instanceof Error
-          ? event
-          : new Error("WebSocket error");
+        const error = event instanceof Error ? event : new Error("WebSocket error");
         this.logger.error("WebSocket error", error);
         this.isConnecting = false;
         this.emit("error", error);
       };
 
       ws.onclose = (event: unknown) => {
-        const code = event && typeof event === "object" && "code" in event
-          ? (event as { code: number }).code
-          : 1006;
-        const reason = event && typeof event === "object" && "reason" in event
-          ? String((event as { reason: unknown }).reason)
-          : "";
+        const code =
+          event && typeof event === "object" && "code" in event
+            ? (event as { code: number }).code
+            : 1006;
+        const reason =
+          event && typeof event === "object" && "reason" in event
+            ? String((event as { reason: unknown }).reason)
+            : "";
         this.logger.info("WebSocket disconnected", { code, reason });
         this.isConnecting = false;
         this.stopHeartbeat();

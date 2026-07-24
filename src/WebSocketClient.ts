@@ -107,10 +107,12 @@ export class WebSocketClient extends Emitter {
    */
   send(data: unknown): boolean {
     const serialized =
-      typeof data === "string" || data instanceof Uint8Array || data instanceof ArrayBuffer
-        ? data
-        : JSON.stringify(data);
-    return this.connection.send(serialized as string | ArrayBuffer | Uint8Array);
+      data instanceof Uint8Array
+        ? new Uint8Array(data).buffer
+        : typeof data === "string" || data instanceof ArrayBuffer
+          ? data
+          : JSON.stringify(data);
+    return this.connection.send(serialized);
   }
 
   /**

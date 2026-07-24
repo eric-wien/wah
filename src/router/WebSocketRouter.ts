@@ -24,7 +24,6 @@ export class WebSocketRouter extends Emitter {
     this.logger = logger;
   }
 
-
   /**
    * Registers a handler that will be invoked for every message matching the given schema.
    *

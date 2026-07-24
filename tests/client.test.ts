@@ -168,6 +168,22 @@ describe("WebSocketClient", () => {
     expect(ws.send).toHaveBeenCalledWith("raw string");
   });
 
+  it("send() normalizes typed arrays to browser-compatible ArrayBuffers", () => {
+    const client = createClient();
+    client.connect();
+
+    const ws = lastWs();
+    ws.readyState = WS_READY_STATE.OPEN;
+    ws.onopen!({});
+
+    const payload = new Uint8Array([1, 2, 3]);
+    client.send(payload);
+
+    const sent = vi.mocked(ws.send).mock.calls[0][0];
+    expect(sent).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(sent as ArrayBuffer)).toEqual(payload);
+  });
+
   it("send() returns false when not connected", () => {
     const client = createClient();
     const result = client.send("data");
